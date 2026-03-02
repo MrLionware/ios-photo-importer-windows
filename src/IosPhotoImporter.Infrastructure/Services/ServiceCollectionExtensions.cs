@@ -12,7 +12,6 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddIosPhotoImporterCore(this IServiceCollection services)
     {
         services.AddSingleton<IFileCollisionPolicy, SkipIncomingCollisionPolicy>();
-        services.AddSingleton<IDuplicatePolicy, PersistentIdThenHashDuplicatePolicy>();
         services.AddSingleton<IImportService, ImportService>();
         return services;
     }

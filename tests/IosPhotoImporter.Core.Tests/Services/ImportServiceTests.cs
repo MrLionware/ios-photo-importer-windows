@@ -36,7 +36,6 @@ public sealed class ImportServiceTests : IDisposable
             deviceService,
             discovery,
             content,
-            new PersistentIdThenHashDuplicatePolicy(repository),
             new SkipIncomingCollisionPolicy());
 
         var jobId = await sut.StartImportAsync(new ImportRequest("device-1", _tempRoot, ImportMode.NewOnly), CancellationToken.None);
@@ -70,7 +69,6 @@ public sealed class ImportServiceTests : IDisposable
             deviceService,
             discovery,
             content,
-            new PersistentIdThenHashDuplicatePolicy(repository),
             new SkipIncomingCollisionPolicy());
 
         var jobId = await sut.StartImportAsync(new ImportRequest("device-1", _tempRoot, ImportMode.NewOnly), CancellationToken.None);

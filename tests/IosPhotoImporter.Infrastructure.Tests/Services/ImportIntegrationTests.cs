@@ -34,7 +34,6 @@ public sealed class ImportIntegrationTests : IDisposable
             new WpdDeviceService(transport),
             new WpdMediaDiscoveryService(transport),
             new WpdMediaContentService(transport),
-            new PersistentIdThenHashDuplicatePolicy(repository),
             new SkipIncomingCollisionPolicy());
 
         var firstJob = await importService.StartImportAsync(new ImportRequest("device-1", destination), CancellationToken.None);

@@ -10,7 +10,6 @@ public sealed class ImportService(
     IDeviceService deviceService,
     IMediaDiscoveryService mediaDiscoveryService,
     IMediaContentService mediaContentService,
-    IDuplicatePolicy duplicatePolicy,
     IFileCollisionPolicy fileCollisionPolicy) : IImportService
 {
     private readonly ConcurrentDictionary<ImportJobId, CancellationTokenSource> _runningJobs = new();
@@ -285,18 +284,6 @@ public sealed class ImportService(
             var hashHex = await CopyWithHashAsync(sourceStream, tempFileStream, ct).ConfigureAwait(false);
             await tempFileStream.FlushAsync(ct).ConfigureAwait(false);
 
-            var duplicate = await duplicatePolicy
-                .CheckAsync(job.DeviceId, asset, _ => Task.FromResult(hashHex), ct)
-                .ConfigureAwait(false);
-
-            if (duplicate.IsDuplicate)
-            {
-                tempFileStream.Close();
-                SafeDeleteTemp(tempPath);
-                await MarkSkippedAsync(job, asset, counts, "DUPLICATE", duplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
-                return;
-            }
-
             tempFileStream.Close();
             File.Move(tempPath, finalPath);
 
@@ -307,7 +294,7 @@ public sealed class ImportService(
                     asset.SourceObjectId,
                     asset.Name,
                     asset.SizeBytes,
-                    duplicate.HashHex ?? hashHex,
+                    hashHex,
                     finalPath,
                     DateTimeOffset.UtcNow),
                 ct).ConfigureAwait(false);
