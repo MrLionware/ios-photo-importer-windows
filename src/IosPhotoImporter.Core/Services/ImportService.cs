@@ -129,13 +129,21 @@ public sealed class ImportService(
             await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Running, null, null, ct).ConfigureAwait(false);
             Directory.CreateDirectory(job.DestinationPath);
 
+            var assets = new List<MediaAsset>();
             await foreach (var asset in mediaDiscoveryService.EnumerateAssetsAsync(job.DeviceId, ct).ConfigureAwait(false))
             {
-                counts.Total += 1;
+                assets.Add(asset);
+                counts.Total = assets.Count;
+                EmitProgress(job.JobId, counts, $"Scanning: {asset.Name}");
+            }
+
+            foreach (var asset in assets)
+            {
                 await repository.UpsertJobItemAsync(new ImportJobItem(job.JobId, asset.SourceObjectId, ImportItemState.Pending), ct)
                     .ConfigureAwait(false);
-                await ProcessAssetAsync(job, asset, counts, ct).ConfigureAwait(false);
             }
+
+            await ProcessAssetsAsync(job, assets, counts, ct).ConfigureAwait(false);
 
             var status = counts.Failed > 0
                 ? ImportJobStatus.Failed
