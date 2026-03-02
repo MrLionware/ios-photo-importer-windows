@@ -321,11 +321,10 @@ public sealed class SqliteImportStateRepository(SqliteRepositoryOptions options)
         await using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
         const string sql = """
-            SELECT 1
+            SELECT local_path
             FROM imported_assets
             WHERE device_id = $device_id
               AND persistent_id = $persistent_id
-            LIMIT 1;
             """;
 
         await using var command = connection.CreateCommand();
@@ -333,8 +332,7 @@ public sealed class SqliteImportStateRepository(SqliteRepositoryOptions options)
         command.Parameters.AddWithValue("$device_id", deviceId);
         command.Parameters.AddWithValue("$persistent_id", persistentId);
 
-        var scalar = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return scalar is not null;
+        return await AnyImportedFileStillExistsAsync(command, ct).ConfigureAwait(false);
     }
 
     public async Task<bool> IsHashImportedAsync(string deviceId, string hashHex, CancellationToken ct)
@@ -342,11 +340,10 @@ public sealed class SqliteImportStateRepository(SqliteRepositoryOptions options)
         await using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
 
         const string sql = """
-            SELECT 1
+            SELECT local_path
             FROM imported_assets
             WHERE device_id = $device_id
               AND sha256 = $sha256
-            LIMIT 1;
             """;
 
         await using var command = connection.CreateCommand();
@@ -354,8 +351,7 @@ public sealed class SqliteImportStateRepository(SqliteRepositoryOptions options)
         command.Parameters.AddWithValue("$device_id", deviceId);
         command.Parameters.AddWithValue("$sha256", hashHex);
 
-        var scalar = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
-        return scalar is not null;
+        return await AnyImportedFileStillExistsAsync(command, ct).ConfigureAwait(false);
     }
 
     public async Task MarkImportedAssetAsync(ImportedAssetRecord importedAsset, CancellationToken ct)
@@ -439,5 +435,25 @@ public sealed class SqliteImportStateRepository(SqliteRepositoryOptions options)
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA journal_mode=WAL;";
         await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> AnyImportedFileStillExistsAsync(SqliteCommand command, CancellationToken ct)
+    {
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            if (reader.IsDBNull(0))
+            {
+                continue;
+            }
+
+            var localPath = reader.GetString(0);
+            if (!string.IsNullOrWhiteSpace(localPath) && File.Exists(localPath))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

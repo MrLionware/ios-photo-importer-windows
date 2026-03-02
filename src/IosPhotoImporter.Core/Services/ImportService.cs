@@ -128,6 +128,7 @@ public sealed class ImportService(
         {
             await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Running, null, null, ct).ConfigureAwait(false);
             Directory.CreateDirectory(job.DestinationPath);
+            CleanupStaleTempFiles(job.DestinationPath);
 
             var assets = new List<MediaAsset>();
             await foreach (var asset in mediaDiscoveryService.EnumerateAssetsAsync(job.DeviceId, ct).ConfigureAwait(false))
@@ -172,6 +173,8 @@ public sealed class ImportService(
         try
         {
             await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Running, null, null, ct).ConfigureAwait(false);
+            Directory.CreateDirectory(job.DestinationPath);
+            CleanupStaleTempFiles(job.DestinationPath);
 
             var pendingStates = new[] { ImportItemState.Pending, ImportItemState.FailedTemporary };
             var pendingItems = await repository.GetJobItemsByStatesAsync(job.JobId, pendingStates, ct).ConfigureAwait(false);
@@ -289,7 +292,7 @@ public sealed class ImportService(
             if (duplicate.IsDuplicate)
             {
                 tempFileStream.Close();
-                File.Delete(tempPath);
+                SafeDeleteTemp(tempPath);
                 await MarkSkippedAsync(job, asset, counts, "DUPLICATE", duplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
                 return;
             }
@@ -421,6 +424,26 @@ public sealed class ImportService(
             if (File.Exists(tempPath))
             {
                 File.Delete(tempPath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup of temp files.
+        }
+    }
+
+    private static void CleanupStaleTempFiles(string destinationPath)
+    {
+        if (!Directory.Exists(destinationPath))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var tempPath in Directory.EnumerateFiles(destinationPath, "*.part", SearchOption.TopDirectoryOnly))
+            {
+                SafeDeleteTemp(tempPath);
             }
         }
         catch
