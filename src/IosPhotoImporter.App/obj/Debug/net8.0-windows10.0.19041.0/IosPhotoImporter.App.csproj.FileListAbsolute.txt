@@ -1,1 +1,0 @@
-/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.App/obj/Debug/net8.0-windows10.0.19041.0/IosPhotoImporter.App.csproj.AssemblyReference.cache
