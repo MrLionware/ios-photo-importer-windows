@@ -10,6 +10,15 @@ namespace IosPhotoImporter.App.Pages;
 public sealed partial class SettingsPage : Page
 {
     private const string DefaultLogVerbosity = "Information";
+    private static readonly string DefaultDestinationPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+        "iOS Imports");
+    private static readonly string AppDataDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "IosPhotoImporter");
+    private static readonly string DatabasePath = Path.Combine(AppDataDirectory, "import-state.db");
+    private static readonly string PreferencesPath = Path.Combine(AppDataDirectory, "preferences.json");
+    private static readonly string LogsDirectory = Path.Combine(AppDataDirectory, "logs");
 
     private readonly ImportWorkflowState _workflowState;
     private readonly IImportStateRepository _repository;
@@ -64,6 +73,86 @@ public sealed partial class SettingsPage : Page
         catch (Exception ex)
         {
             ShowStatus($"Failed to clear history: {ex.Message}", InfoBarSeverity.Error);
+        }
+    }
+
+    private async void OnResetAppClicked(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await _repository.InitializeAsync(CancellationToken.None);
+            await _repository.ClearHistoryAsync(CancellationToken.None);
+
+            _preferencesStore.Save(new AppPreferences(DefaultDestinationPath: null));
+            TryDeleteFile(DatabasePath);
+            TryDeleteFile(PreferencesPath);
+            TryDeleteDirectory(LogsDirectory);
+            CleanupDestinationTempFiles(_workflowState.DestinationPath);
+
+            _workflowState.SelectedDeviceId = null;
+            _workflowState.SelectedDeviceName = null;
+            _workflowState.CurrentJobId = null;
+            _workflowState.LastProgress = null;
+            _workflowState.LastResult = null;
+            _workflowState.DestinationPath = DefaultDestinationPath;
+
+            DefaultDestinationTextBox.Text = _workflowState.DestinationPath;
+            LogVerbosityComboBox.SelectedIndex = 0;
+            ShowStatus("App reset complete. You can start a fresh import now.", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Failed to reset app: {ex.Message}", InfoBarSeverity.Error);
+        }
+    }
+
+    private static void CleanupDestinationTempFiles(string? destinationPath)
+    {
+        if (string.IsNullOrWhiteSpace(destinationPath) || !Directory.Exists(destinationPath))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var tempPath in Directory.EnumerateFiles(destinationPath, "*.part", SearchOption.TopDirectoryOnly))
+            {
+                TryDeleteFile(tempPath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private static void TryDeleteFile(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private static void TryDeleteDirectory(string directoryPath)
+    {
+        try
+        {
+            if (Directory.Exists(directoryPath))
+            {
+                Directory.Delete(directoryPath, recursive: true);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
         }
     }
 

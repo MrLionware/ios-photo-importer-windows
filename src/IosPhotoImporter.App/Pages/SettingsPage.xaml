@@ -34,6 +34,7 @@
         <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="12">
             <Button Content="Save Preferences" Click="OnSaveClicked" />
             <Button Content="Clear Import History" Click="OnClearHistoryClicked" />
+            <Button Content="Reset App" Click="OnResetAppClicked" />
         </StackPanel>
 
         <InfoBar Grid.Row="4" x:Name="StatusInfoBar" IsOpen="False" />
