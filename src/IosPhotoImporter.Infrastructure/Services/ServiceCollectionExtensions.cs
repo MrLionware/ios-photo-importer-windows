@@ -25,10 +25,20 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sqliteOptions);
         services.AddSingleton<IImportStateRepository, SqliteImportStateRepository>();
 
-        services.AddSingleton<IWpdTransport>(_ => transport ?? new UnsupportedWpdTransport());
+        services.AddSingleton<IWpdTransport>(_ => transport ?? CreateDefaultTransport());
         services.AddSingleton<IDeviceService, WpdDeviceService>();
         services.AddSingleton<IMediaDiscoveryService, WpdMediaDiscoveryService>();
         services.AddSingleton<IMediaContentService, WpdMediaContentService>();
         return services;
+    }
+
+    private static IWpdTransport CreateDefaultTransport()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return new WindowsMediaDeviceTransport();
+        }
+
+        return new UnsupportedWpdTransport();
     }
 }

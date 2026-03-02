@@ -1,5 +1,6 @@
 using IosPhotoImporter.App.ViewModels;
 using IosPhotoImporter.App.Logging;
+using IosPhotoImporter.App.Settings;
 using IosPhotoImporter.Infrastructure.Data;
 using IosPhotoImporter.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,21 @@ public partial class App : Application
                     builder.AddProvider(new LocalFileLoggerProvider(logDirectory));
                     builder.AddDebug();
                 })
-                .AddSingleton<ImportWorkflowState>()
+                .AddSingleton<IAppPreferencesStore, JsonAppPreferencesStore>()
+                .AddSingleton(provider =>
+                {
+                    var preferences = provider.GetRequiredService<IAppPreferencesStore>().Load();
+                    var defaultDestination = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+                        "iOS Imports");
+
+                    return new ImportWorkflowState
+                    {
+                        DestinationPath = string.IsNullOrWhiteSpace(preferences.DefaultDestinationPath)
+                            ? defaultDestination
+                            : preferences.DefaultDestinationPath
+                    };
+                })
                 .AddIosPhotoImporterInfrastructure(new SqliteRepositoryOptions(dbPath))
                 .AddIosPhotoImporterCore()
                 .AddSingleton<MainWindow>();

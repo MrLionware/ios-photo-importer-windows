@@ -1,32 +1,38 @@
 using IosPhotoImporter.App.ViewModels;
+using IosPhotoImporter.App.Settings;
 using IosPhotoImporter.Core.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Windows.Storage;
 
 namespace IosPhotoImporter.App.Pages;
 
 public sealed partial class SettingsPage : Page
 {
-    private const string LogVerbosityKey = "LogVerbosity";
+    private const string DefaultLogVerbosity = "Information";
 
     private readonly ImportWorkflowState _workflowState;
     private readonly IImportStateRepository _repository;
+    private readonly IAppPreferencesStore _preferencesStore;
 
     public SettingsPage()
     {
         InitializeComponent();
         _workflowState = App.Host.Services.GetRequiredService<ImportWorkflowState>();
         _repository = App.Host.Services.GetRequiredService<IImportStateRepository>();
+        _preferencesStore = App.Host.Services.GetRequiredService<IAppPreferencesStore>();
         Loaded += OnLoaded;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        DefaultDestinationTextBox.Text = _workflowState.DestinationPath;
-        var localSettings = ApplicationData.Current.LocalSettings;
-        var verbosity = localSettings.Values[LogVerbosityKey]?.ToString() ?? "Information";
+        var preferences = _preferencesStore.Load();
+        DefaultDestinationTextBox.Text = string.IsNullOrWhiteSpace(preferences.DefaultDestinationPath)
+            ? _workflowState.DestinationPath
+            : preferences.DefaultDestinationPath;
+        var verbosity = string.IsNullOrWhiteSpace(preferences.LogVerbosity)
+            ? DefaultLogVerbosity
+            : preferences.LogVerbosity;
 
         var matchIndex = LogVerbosityComboBox.Items
             .Select((item, index) => (item, index))
@@ -39,9 +45,11 @@ public sealed partial class SettingsPage : Page
     private void OnSaveClicked(object sender, RoutedEventArgs e)
     {
         _workflowState.DestinationPath = DefaultDestinationTextBox.Text;
-        var verbosity = LogVerbosityComboBox.SelectedItem?.ToString() ?? "Information";
+        var verbosity = LogVerbosityComboBox.SelectedItem?.ToString() ?? DefaultLogVerbosity;
 
-        ApplicationData.Current.LocalSettings.Values[LogVerbosityKey] = verbosity;
+        _preferencesStore.Save(new AppPreferences(
+            DefaultDestinationPath: _workflowState.DestinationPath,
+            LogVerbosity: verbosity));
         ShowStatus("Preferences saved.", InfoBarSeverity.Success);
     }
 
