@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "IosPhotoImporter.App (Package)": {
+      "commandName": "MsixPackage"
+    }
+  }
+}

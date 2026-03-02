@@ -1,0 +1,32 @@
+<Page
+    x:Class="IosPhotoImporter.App.Pages.DevicePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="24" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Connected iPhone Devices" FontSize="24" FontWeight="SemiBold" />
+        <TextBlock Grid.Row="1" Text="Connect your iPhone over USB, unlock it, and tap Trust." Opacity="0.75" />
+
+        <ListView
+            Grid.Row="2"
+            x:Name="DevicesList"
+            SelectionMode="Single"
+            DisplayMemberPath="Name"
+            Height="320" />
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+            <Button Content="Refresh" Click="OnRefreshClicked" />
+            <Button Content="Continue" Click="OnContinueClicked" />
+        </StackPanel>
+    </Grid>
+</Page>

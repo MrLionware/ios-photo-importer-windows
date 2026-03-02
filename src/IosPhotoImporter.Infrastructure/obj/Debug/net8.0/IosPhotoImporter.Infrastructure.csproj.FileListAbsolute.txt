@@ -1,0 +1,15 @@
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/bin/Debug/net8.0/IosPhotoImporter.Infrastructure.deps.json
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/bin/Debug/net8.0/IosPhotoImporter.Infrastructure.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/bin/Debug/net8.0/IosPhotoImporter.Infrastructure.pdb
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/bin/Debug/net8.0/IosPhotoImporter.Core.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/bin/Debug/net8.0/IosPhotoImporter.Core.pdb
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.csproj.AssemblyReference.cache
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.AssemblyInfoInputs.cache
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.AssemblyInfo.cs
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.csproj.CoreCompileInputs.cache
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhoto.E2622395.Up2Date
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/refint/IosPhotoImporter.Infrastructure.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/IosPhotoImporter.Infrastructure.pdb
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Infrastructure/obj/Debug/net8.0/ref/IosPhotoImporter.Infrastructure.dll

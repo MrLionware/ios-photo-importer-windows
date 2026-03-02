@@ -1,0 +1,11 @@
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/bin/Debug/net8.0/IosPhotoImporter.Core.deps.json
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/bin/Debug/net8.0/IosPhotoImporter.Core.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/bin/Debug/net8.0/IosPhotoImporter.Core.pdb
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/IosPhotoImporter.Core.GeneratedMSBuildEditorConfig.editorconfig
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/IosPhotoImporter.Core.AssemblyInfoInputs.cache
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/IosPhotoImporter.Core.AssemblyInfo.cs
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/IosPhotoImporter.Core.csproj.CoreCompileInputs.cache
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/IosPhotoImporter.Core.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/refint/IosPhotoImporter.Core.dll
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/IosPhotoImporter.Core.pdb
+/Users/calebrubiano/Documents/File transfer/src/IosPhotoImporter.Core/obj/Debug/net8.0/ref/IosPhotoImporter.Core.dll
