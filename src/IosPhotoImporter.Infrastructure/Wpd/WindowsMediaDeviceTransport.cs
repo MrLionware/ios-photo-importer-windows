@@ -270,7 +270,7 @@ public sealed class WindowsMediaDeviceTransport : IWpdTransport
         {
             ct.ThrowIfCancellationRequested();
 
-            foreach (var file in SafeEnumerateFiles(device, root))
+            foreach (var file in EnumerateFilesByDirectory(device, root, ct))
             {
                 ct.ThrowIfCancellationRequested();
 
@@ -335,39 +335,59 @@ public sealed class WindowsMediaDeviceTransport : IWpdTransport
         }
     }
 
-    private static IEnumerable<string> SafeEnumerateFiles(MediaDevice device, string root)
+    private static IEnumerable<string> EnumerateFilesByDirectory(MediaDevice device, string root, CancellationToken ct)
     {
-        IEnumerator<string>? enumerator;
-        try
-        {
-            enumerator = device.EnumerateFiles(root, "*.*", SearchOption.AllDirectories).GetEnumerator();
-        }
-        catch
+        if (string.IsNullOrWhiteSpace(root))
         {
             yield break;
         }
 
-        using (enumerator)
+        var pending = new Queue<string>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        pending.Enqueue(root);
+        visited.Add(root);
+
+        while (pending.Count > 0)
         {
-            while (true)
+            ct.ThrowIfCancellationRequested();
+            var current = pending.Dequeue();
+
+            foreach (var file in TryGetFiles(device, current))
             {
-                string current;
-                try
-                {
-                    if (!enumerator.MoveNext())
-                    {
-                        yield break;
-                    }
-
-                    current = enumerator.Current;
-                }
-                catch
-                {
-                    yield break;
-                }
-
-                yield return current;
+                yield return file;
             }
+
+            foreach (var directory in TryGetDirectories(device, current))
+            {
+                if (visited.Add(directory))
+                {
+                    pending.Enqueue(directory);
+                }
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> TryGetFiles(MediaDevice device, string directory)
+    {
+        try
+        {
+            return device.GetFiles(directory, "*.*", SearchOption.TopDirectoryOnly);
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static IReadOnlyList<string> TryGetDirectories(MediaDevice device, string directory)
+    {
+        try
+        {
+            return device.GetDirectories(directory);
+        }
+        catch
+        {
+            return Array.Empty<string>();
         }
     }
 

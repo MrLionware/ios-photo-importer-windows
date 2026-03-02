@@ -68,4 +68,40 @@ public sealed class PersistentIdThenHashDuplicatePolicyTests
         Assert.True(result.IsDuplicate);
         Assert.Equal("Duplicate by hash", result.Reason);
     }
+
+    [Fact]
+    public async Task CheckAsync_FallsBackToHashWhenPersistentIdIsPresentButNotKnown()
+    {
+        var repository = new InMemoryImportStateRepository
+        {
+            PersistentIdExists = false,
+            HashExists = true
+        };
+        var policy = new PersistentIdThenHashDuplicatePolicy(repository);
+
+        var asset = new MediaAsset(
+            "obj-3",
+            "pid-3",
+            "IMG_0003.HEIC",
+            ".HEIC",
+            30,
+            DateTimeOffset.UtcNow,
+            MediaKind.Image,
+            false);
+
+        var hashFactoryCalled = false;
+        var result = await policy.CheckAsync(
+            "device-a",
+            asset,
+            _ =>
+            {
+                hashFactoryCalled = true;
+                return Task.FromResult("HASH999");
+            },
+            CancellationToken.None);
+
+        Assert.True(hashFactoryCalled);
+        Assert.True(result.IsDuplicate);
+        Assert.Equal("Duplicate by hash", result.Reason);
+    }
 }

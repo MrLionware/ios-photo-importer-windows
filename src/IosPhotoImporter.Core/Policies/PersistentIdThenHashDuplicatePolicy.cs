@@ -18,11 +18,14 @@ public sealed class PersistentIdThenHashDuplicatePolicy(IImportStateRepository r
             {
                 return DuplicateCheckResult.Duplicate("Duplicate by persistent id");
             }
-
-            return DuplicateCheckResult.NotDuplicate();
         }
 
         var hashHex = await hashFactory(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(hashHex))
+        {
+            return DuplicateCheckResult.NotDuplicate();
+        }
+
         var isDuplicateByHash = await repository.IsHashImportedAsync(deviceId, hashHex, ct).ConfigureAwait(false);
         return isDuplicateByHash
             ? DuplicateCheckResult.Duplicate("Duplicate by hash")

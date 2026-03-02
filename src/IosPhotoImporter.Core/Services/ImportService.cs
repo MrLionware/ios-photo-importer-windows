@@ -255,19 +255,6 @@ public sealed class ImportService(
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(asset.PersistentId))
-        {
-            var persistentDuplicate = await duplicatePolicy
-                .CheckAsync(job.DeviceId, asset, _ => Task.FromResult(string.Empty), ct)
-                .ConfigureAwait(false);
-
-            if (persistentDuplicate.IsDuplicate)
-            {
-                await MarkSkippedAsync(job, asset, counts, "DUPLICATE", persistentDuplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
-                return;
-            }
-        }
-
         var finalPath = Path.Combine(job.DestinationPath, asset.Name);
         var finalPathExists = File.Exists(finalPath);
         var collisionAction = fileCollisionPolicy.Resolve(finalPath, finalPathExists);
