@@ -10,6 +10,8 @@
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <WindowsPackageType>None</WindowsPackageType>
+    <SelfContained Condition="'$(WindowsPackageType)' == 'None'">true</SelfContained>
+    <WindowsAppSDKSelfContained Condition="'$(WindowsPackageType)' == 'None'">true</WindowsAppSDKSelfContained>
     <AppxBundlePlatforms Condition="'$(WindowsPackageType)' == 'MSIX'">x64</AppxBundlePlatforms>
     <UseWinUI>true</UseWinUI>
     <EnableMsixTooling>true</EnableMsixTooling>
