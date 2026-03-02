@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using IosPhotoImporter.Core.Abstractions;
 using IosPhotoImporter.Core.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IosPhotoImporter.Core.Services;
 
@@ -10,10 +12,12 @@ public sealed class ImportService(
     IDeviceService deviceService,
     IMediaDiscoveryService mediaDiscoveryService,
     IMediaContentService mediaContentService,
-    IFileCollisionPolicy fileCollisionPolicy) : IImportService
+    IFileCollisionPolicy fileCollisionPolicy,
+    ILogger<ImportService>? logger = null) : IImportService
 {
     private readonly ConcurrentDictionary<ImportJobId, CancellationTokenSource> _runningJobs = new();
     private readonly ConcurrentDictionary<ImportJobId, ImportResult> _results = new();
+    private readonly ILogger<ImportService> _logger = logger ?? NullLogger<ImportService>.Instance;
 
     public event EventHandler<ImportProgress>? ProgressChanged;
 
@@ -48,6 +52,11 @@ public sealed class ImportService(
             null);
 
         await repository.CreateJobAsync(job, ct).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Import job {JobId} created for device {DeviceId}. Destination={Destination}.",
+            jobId,
+            request.DeviceId,
+            request.DestinationPath);
 
         var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         if (!_runningJobs.TryAdd(jobId, linkedCts))
@@ -106,6 +115,7 @@ public sealed class ImportService(
         if (_runningJobs.TryGetValue(jobId, out var cts))
         {
             cts.Cancel();
+            _logger.LogInformation("Cancellation requested for job {JobId}.", jobId);
         }
 
         return Task.CompletedTask;
@@ -128,6 +138,11 @@ public sealed class ImportService(
             await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Running, null, null, ct).ConfigureAwait(false);
             Directory.CreateDirectory(job.DestinationPath);
             CleanupStaleTempFiles(job.DestinationPath);
+            _logger.LogInformation(
+                "Job {JobId} started. Device={DeviceId}, Destination={Destination}.",
+                job.JobId,
+                job.DeviceId,
+                job.DestinationPath);
 
             var assets = new List<MediaAsset>();
             await foreach (var asset in mediaDiscoveryService.EnumerateAssetsAsync(job.DeviceId, ct).ConfigureAwait(false))
@@ -153,11 +168,13 @@ public sealed class ImportService(
         }
         catch (OperationCanceledException)
         {
+            _logger.LogWarning("Job {JobId} cancelled by user.", job.JobId);
             await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Cancelled, "Cancelled by user.")
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Job {JobId} failed unexpectedly during startup or scan.", job.JobId);
             counts.Failed = Math.Max(1, counts.Failed);
             await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Failed, ex.Message)
                 .ConfigureAwait(false);
@@ -174,6 +191,7 @@ public sealed class ImportService(
             await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Running, null, null, ct).ConfigureAwait(false);
             Directory.CreateDirectory(job.DestinationPath);
             CleanupStaleTempFiles(job.DestinationPath);
+            _logger.LogInformation("Resuming job {JobId}.", job.JobId);
 
             var pendingStates = new[] { ImportItemState.Pending, ImportItemState.FailedTemporary };
             var pendingItems = await repository.GetJobItemsByStatesAsync(job.JobId, pendingStates, ct).ConfigureAwait(false);
@@ -218,11 +236,13 @@ public sealed class ImportService(
         }
         catch (OperationCanceledException)
         {
+            _logger.LogWarning("Resume cancelled for job {JobId}.", job.JobId);
             await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Cancelled, "Cancelled by user.")
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Job {JobId} failed unexpectedly during resume.", job.JobId);
             counts.Failed = Math.Max(1, counts.Failed);
             await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Failed, ex.Message)
                 .ConfigureAwait(false);
@@ -312,6 +332,11 @@ public sealed class ImportService(
             SafeDeleteTemp(tempPath);
             await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.FailedTemporary, "CANCELLED", "Cancelled by user.", CancellationToken.None)
                 .ConfigureAwait(false);
+            _logger.LogWarning(
+                "Copy cancelled for job {JobId}. ObjectId={ObjectId}, File={FileName}.",
+                job.JobId,
+                asset.SourceObjectId,
+                asset.Name);
             throw;
         }
         catch (IOException ioEx)
@@ -322,6 +347,12 @@ public sealed class ImportService(
                 .ConfigureAwait(false);
             await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
             EmitProgress(job.JobId, counts, asset.Name);
+            _logger.LogWarning(
+                ioEx,
+                "I/O failure on job {JobId}. ObjectId={ObjectId}, File={FileName}.",
+                job.JobId,
+                asset.SourceObjectId,
+                asset.Name);
         }
         catch (Exception ex)
         {
@@ -331,6 +362,12 @@ public sealed class ImportService(
                 .ConfigureAwait(false);
             await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
             EmitProgress(job.JobId, counts, asset.Name);
+            _logger.LogError(
+                ex,
+                "Unexpected failure on job {JobId}. ObjectId={ObjectId}, File={FileName}.",
+                job.JobId,
+                asset.SourceObjectId,
+                asset.Name);
         }
     }
 
@@ -347,6 +384,13 @@ public sealed class ImportService(
             .ConfigureAwait(false);
         await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
         EmitProgress(job.JobId, counts, asset.Name);
+        _logger.LogWarning(
+            "Skipped item on job {JobId}. ObjectId={ObjectId}, File={FileName}, Code={Code}, Message={Message}.",
+            job.JobId,
+            asset.SourceObjectId,
+            asset.Name,
+            errorCode,
+            errorMessage);
     }
 
     private void EmitProgress(ImportJobId jobId, ProgressAccumulator counts, string? currentFile)
@@ -379,6 +423,15 @@ public sealed class ImportService(
 
         await repository.SetJobStatusAsync(jobId, status, errorMessage, DateTimeOffset.UtcNow, CancellationToken.None)
             .ConfigureAwait(false);
+        _logger.LogInformation(
+            "Job {JobId} finished. Status={Status}, Imported={Imported}, Skipped={Skipped}, Failed={Failed}, Bytes={Bytes}, Error={Error}.",
+            jobId,
+            status,
+            counts.Completed,
+            counts.Skipped,
+            counts.Failed,
+            counts.BytesTransferred,
+            errorMessage ?? string.Empty);
 
         EmitProgress(jobId, counts, currentFile: null);
     }

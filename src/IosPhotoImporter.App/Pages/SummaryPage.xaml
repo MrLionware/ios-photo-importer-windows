@@ -12,6 +12,8 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <TextBlock Text="Import Summary" FontSize="24" FontWeight="SemiBold" />
@@ -19,7 +21,13 @@
 
         <TextBlock Grid.Row="2" x:Name="DurationText" />
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
+        <TextBlock Grid.Row="3" Text="Skipped/Failed Details" FontWeight="SemiBold" />
+
+        <ScrollViewer Grid.Row="4" MaxHeight="260" VerticalScrollBarVisibility="Auto">
+            <TextBlock x:Name="DetailsText" TextWrapping="WrapWholeWords" />
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right">
             <Button Content="Open Folder" Click="OnOpenFolderClicked" />
             <Button Content="View Logs" Click="OnViewLogsClicked" />
             <Button Content="Start Over" Click="OnRestartClicked" />

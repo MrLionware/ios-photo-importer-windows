@@ -3,13 +3,25 @@ using Microsoft.Extensions.Logging;
 
 namespace IosPhotoImporter.App.Logging;
 
-public sealed class LocalFileLoggerProvider(string logDirectory) : ILoggerProvider
+public sealed class LocalFileLoggerProvider : ILoggerProvider
 {
+    private readonly string _logDirectory;
     private readonly ConcurrentDictionary<string, LocalFileLogger> _loggers = new(StringComparer.OrdinalIgnoreCase);
+
+    public LocalFileLoggerProvider(string logDirectory)
+    {
+        _logDirectory = logDirectory;
+        Directory.CreateDirectory(logDirectory);
+        var filePath = Path.Combine(logDirectory, "importer.log");
+        if (!File.Exists(filePath))
+        {
+            File.WriteAllText(filePath, string.Empty);
+        }
+    }
 
     public ILogger CreateLogger(string categoryName)
     {
-        return _loggers.GetOrAdd(categoryName, _ => new LocalFileLogger(logDirectory, categoryName));
+        return _loggers.GetOrAdd(categoryName, _ => new LocalFileLogger(_logDirectory, categoryName));
     }
 
     public void Dispose()
@@ -34,6 +46,10 @@ internal sealed class LocalFileLogger : ILogger, IDisposable
         _categoryName = categoryName;
         Directory.CreateDirectory(logDirectory);
         _filePath = Path.Combine(logDirectory, "importer.log");
+        if (!File.Exists(_filePath))
+        {
+            File.WriteAllText(_filePath, string.Empty);
+        }
     }
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
@@ -67,7 +83,20 @@ internal sealed class LocalFileLogger : ILogger, IDisposable
 
         lock (_sync)
         {
-            File.AppendAllText(_filePath, line + Environment.NewLine);
+            try
+            {
+                var directory = Path.GetDirectoryName(_filePath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.AppendAllText(_filePath, line + Environment.NewLine);
+            }
+            catch
+            {
+                // Avoid crashing the app due to logging I/O errors.
+            }
         }
     }
 
