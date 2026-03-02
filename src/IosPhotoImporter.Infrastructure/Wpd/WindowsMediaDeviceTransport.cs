@@ -249,9 +249,13 @@ public sealed class WindowsMediaDeviceTransport : IWpdTransport
 
     private static IEnumerable<string> EnumerateCandidateFilePaths(MediaDevice device, CancellationToken ct)
     {
-        var roots = device.GetContentLocations(ContentType.Image)
+        var rootsFromDevice = device.GetContentLocations(ContentType.Image)
             .Concat(device.GetContentLocations(ContentType.Video))
             .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var roots = EnumerateLikelyMediaRoots(device, rootsFromDevice, ct)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -266,17 +270,7 @@ public sealed class WindowsMediaDeviceTransport : IWpdTransport
         {
             ct.ThrowIfCancellationRequested();
 
-            string[] files;
-            try
-            {
-                files = device.GetFiles(root, "*.*", SearchOption.AllDirectories);
-            }
-            catch
-            {
-                continue;
-            }
-
-            foreach (var file in files)
+            foreach (var file in SafeEnumerateFiles(device, root))
             {
                 ct.ThrowIfCancellationRequested();
 
@@ -292,6 +286,97 @@ public sealed class WindowsMediaDeviceTransport : IWpdTransport
                 }
             }
         }
+    }
+
+    private static IEnumerable<string> EnumerateLikelyMediaRoots(MediaDevice device, string[] rootsFromDevice, CancellationToken ct)
+    {
+        foreach (var root in rootsFromDevice)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (IsLikelyMediaRoot(root))
+            {
+                yield return root;
+            }
+        }
+
+        foreach (var root in rootsFromDevice)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!IsLikelyMediaRoot(root))
+            {
+                yield return root;
+            }
+        }
+
+        var knownCandidates = new[]
+        {
+            "\\DCIM",
+            "\\Internal Storage\\DCIM",
+            "\\This Device\\Internal Storage\\DCIM"
+        };
+
+        foreach (var candidate in knownCandidates)
+        {
+            ct.ThrowIfCancellationRequested();
+            var exists = false;
+            try
+            {
+                exists = device.DirectoryExists(candidate);
+            }
+            catch
+            {
+                // Ignore inaccessible candidate paths.
+            }
+
+            if (exists)
+            {
+                yield return candidate;
+            }
+        }
+    }
+
+    private static IEnumerable<string> SafeEnumerateFiles(MediaDevice device, string root)
+    {
+        IEnumerator<string>? enumerator;
+        try
+        {
+            enumerator = device.EnumerateFiles(root, "*.*", SearchOption.AllDirectories).GetEnumerator();
+        }
+        catch
+        {
+            yield break;
+        }
+
+        using (enumerator)
+        {
+            while (true)
+            {
+                string current;
+                try
+                {
+                    if (!enumerator.MoveNext())
+                    {
+                        yield break;
+                    }
+
+                    current = enumerator.Current;
+                }
+                catch
+                {
+                    yield break;
+                }
+
+                yield return current;
+            }
+        }
+    }
+
+    private static bool IsLikelyMediaRoot(string path)
+    {
+        return path.Contains("DCIM", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("Camera", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("Photo", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("Video", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsLivePhotoMotionComponent(MediaDevice device, MediaFileInfo fileInfo, string extension)

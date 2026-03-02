@@ -129,46 +129,29 @@ public sealed class ImportService(
             await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Running, null, null, ct).ConfigureAwait(false);
             Directory.CreateDirectory(job.DestinationPath);
 
-            var assets = new List<MediaAsset>();
             await foreach (var asset in mediaDiscoveryService.EnumerateAssetsAsync(job.DeviceId, ct).ConfigureAwait(false))
             {
-                assets.Add(asset);
-            }
-
-            counts.Total = assets.Count;
-            foreach (var asset in assets)
-            {
+                counts.Total += 1;
                 await repository.UpsertJobItemAsync(new ImportJobItem(job.JobId, asset.SourceObjectId, ImportItemState.Pending), ct)
                     .ConfigureAwait(false);
+                await ProcessAssetAsync(job, asset, counts, ct).ConfigureAwait(false);
             }
 
-            await ProcessAssetsAsync(job, assets, counts, ct).ConfigureAwait(false);
+            var status = counts.Failed > 0
+                ? ImportJobStatus.Failed
+                : ImportJobStatus.Completed;
 
-            var result = new ImportResult(
-                counts.Completed,
-                counts.Skipped,
-                counts.Failed,
-                DateTimeOffset.UtcNow - startedAt,
-                counts.BytesTransferred);
-
-            _results[job.JobId] = result;
-
-            var status = ct.IsCancellationRequested
-                ? ImportJobStatus.Cancelled
-                : counts.Failed > 0
-                    ? ImportJobStatus.Failed
-                    : ImportJobStatus.Completed;
-
-            await repository.SetJobStatusAsync(job.JobId, status, null, DateTimeOffset.UtcNow, CancellationToken.None).ConfigureAwait(false);
+            await FinalizeJobAsync(job.JobId, counts, startedAt, status, null).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Cancelled, "Cancelled by user.", DateTimeOffset.UtcNow, CancellationToken.None)
+            await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Cancelled, "Cancelled by user.")
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Failed, ex.Message, DateTimeOffset.UtcNow, CancellationToken.None)
+            counts.Failed = Math.Max(1, counts.Failed);
+            await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Failed, ex.Message)
                 .ConfigureAwait(false);
         }
     }
@@ -217,29 +200,21 @@ public sealed class ImportService(
             counts.Total = pendingItems.Count;
             await ProcessAssetsAsync(job, assetsToProcess, counts, ct).ConfigureAwait(false);
 
-            var result = new ImportResult(
-                counts.Completed,
-                counts.Skipped,
-                counts.Failed,
-                DateTimeOffset.UtcNow - startedAt,
-                counts.BytesTransferred);
-
-            _results[job.JobId] = result;
-
             var status = counts.Failed > 0
                 ? ImportJobStatus.Failed
                 : ImportJobStatus.Completed;
 
-            await repository.SetJobStatusAsync(job.JobId, status, null, DateTimeOffset.UtcNow, CancellationToken.None).ConfigureAwait(false);
+            await FinalizeJobAsync(job.JobId, counts, startedAt, status, null).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Cancelled, "Cancelled by user.", DateTimeOffset.UtcNow, CancellationToken.None)
+            await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Cancelled, "Cancelled by user.")
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await repository.SetJobStatusAsync(job.JobId, ImportJobStatus.Failed, ex.Message, DateTimeOffset.UtcNow, CancellationToken.None)
+            counts.Failed = Math.Max(1, counts.Failed);
+            await FinalizeJobAsync(job.JobId, counts, startedAt, ImportJobStatus.Failed, ex.Message)
                 .ConfigureAwait(false);
         }
     }
@@ -252,115 +227,125 @@ public sealed class ImportService(
     {
         foreach (var asset in assets)
         {
-            ct.ThrowIfCancellationRequested();
+            await ProcessAssetAsync(job, asset, counts, ct).ConfigureAwait(false);
+        }
+    }
 
-            await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.Processing, null, null, ct)
+    private async Task ProcessAssetAsync(
+        ImportJob job,
+        MediaAsset asset,
+        ProgressAccumulator counts,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.Processing, null, null, ct)
+            .ConfigureAwait(false);
+        EmitProgress(job.JobId, counts, asset.Name);
+
+        if (asset.MediaKind == MediaKind.Unsupported)
+        {
+            await MarkSkippedAsync(job, asset, counts, "UNSUPPORTED_MEDIA", "Unsupported media type.", ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (asset.IsLivePhotoMotionComponent)
+        {
+            await MarkSkippedAsync(job, asset, counts, "LIVE_MOTION_SKIPPED", "Live Photo motion component skipped in v1.", ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(asset.PersistentId))
+        {
+            var persistentDuplicate = await duplicatePolicy
+                .CheckAsync(job.DeviceId, asset, _ => Task.FromResult(string.Empty), ct)
                 .ConfigureAwait(false);
 
-            if (asset.MediaKind == MediaKind.Unsupported)
+            if (persistentDuplicate.IsDuplicate)
             {
-                await MarkSkippedAsync(job, asset, counts, "UNSUPPORTED_MEDIA", "Unsupported media type.", ct).ConfigureAwait(false);
-                continue;
+                await MarkSkippedAsync(job, asset, counts, "DUPLICATE", persistentDuplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
+                return;
             }
+        }
 
-            if (asset.IsLivePhotoMotionComponent)
+        var finalPath = Path.Combine(job.DestinationPath, asset.Name);
+        var finalPathExists = File.Exists(finalPath);
+        var collisionAction = fileCollisionPolicy.Resolve(finalPath, finalPathExists);
+        if (collisionAction == FileCollisionAction.Skip)
+        {
+            await MarkSkippedAsync(job, asset, counts, "FILENAME_COLLISION", "Destination file already exists.", ct).ConfigureAwait(false);
+            return;
+        }
+
+        var tempPath = Path.Combine(job.DestinationPath, $"{asset.Name}.{Guid.NewGuid():N}.part");
+
+        try
+        {
+            using var sourceStream = await mediaContentService.OpenReadAsync(job.DeviceId, asset.SourceObjectId, ct).ConfigureAwait(false);
+            await using var tempFileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+
+            var hashHex = await CopyWithHashAsync(sourceStream, tempFileStream, ct).ConfigureAwait(false);
+            await tempFileStream.FlushAsync(ct).ConfigureAwait(false);
+
+            var duplicate = await duplicatePolicy
+                .CheckAsync(job.DeviceId, asset, _ => Task.FromResult(hashHex), ct)
+                .ConfigureAwait(false);
+
+            if (duplicate.IsDuplicate)
             {
-                await MarkSkippedAsync(job, asset, counts, "LIVE_MOTION_SKIPPED", "Live Photo motion component skipped in v1.", ct).ConfigureAwait(false);
-                continue;
-            }
-
-            if (!string.IsNullOrWhiteSpace(asset.PersistentId))
-            {
-                var persistentDuplicate = await duplicatePolicy
-                    .CheckAsync(job.DeviceId, asset, _ => Task.FromResult(string.Empty), ct)
-                    .ConfigureAwait(false);
-
-                if (persistentDuplicate.IsDuplicate)
-                {
-                    await MarkSkippedAsync(job, asset, counts, "DUPLICATE", persistentDuplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
-                    continue;
-                }
-            }
-
-            var finalPath = Path.Combine(job.DestinationPath, asset.Name);
-            var finalPathExists = File.Exists(finalPath);
-            var collisionAction = fileCollisionPolicy.Resolve(finalPath, finalPathExists);
-            if (collisionAction == FileCollisionAction.Skip)
-            {
-                await MarkSkippedAsync(job, asset, counts, "FILENAME_COLLISION", "Destination file already exists.", ct).ConfigureAwait(false);
-                continue;
-            }
-
-            var tempPath = Path.Combine(job.DestinationPath, $"{asset.Name}.{Guid.NewGuid():N}.part");
-
-            try
-            {
-                using var sourceStream = await mediaContentService.OpenReadAsync(job.DeviceId, asset.SourceObjectId, ct).ConfigureAwait(false);
-                await using var tempFileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-
-                var hashHex = await CopyWithHashAsync(sourceStream, tempFileStream, ct).ConfigureAwait(false);
-                await tempFileStream.FlushAsync(ct).ConfigureAwait(false);
-
-                var duplicate = await duplicatePolicy
-                    .CheckAsync(job.DeviceId, asset, _ => Task.FromResult(hashHex), ct)
-                    .ConfigureAwait(false);
-
-                if (duplicate.IsDuplicate)
-                {
-                    tempFileStream.Close();
-                    File.Delete(tempPath);
-                    await MarkSkippedAsync(job, asset, counts, "DUPLICATE", duplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
-                    continue;
-                }
-
                 tempFileStream.Close();
-                File.Move(tempPath, finalPath);
+                File.Delete(tempPath);
+                await MarkSkippedAsync(job, asset, counts, "DUPLICATE", duplicate.Reason ?? "Duplicate media.", ct).ConfigureAwait(false);
+                return;
+            }
 
-                await repository.MarkImportedAssetAsync(
-                    new ImportedAssetRecord(
-                        job.DeviceId,
-                        asset.PersistentId,
-                        asset.SourceObjectId,
-                        asset.Name,
-                        asset.SizeBytes,
-                        duplicate.HashHex ?? hashHex,
-                        finalPath,
-                        DateTimeOffset.UtcNow),
-                    ct).ConfigureAwait(false);
+            tempFileStream.Close();
+            File.Move(tempPath, finalPath);
 
-                await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.Completed, null, null, ct)
-                    .ConfigureAwait(false);
+            await repository.MarkImportedAssetAsync(
+                new ImportedAssetRecord(
+                    job.DeviceId,
+                    asset.PersistentId,
+                    asset.SourceObjectId,
+                    asset.Name,
+                    asset.SizeBytes,
+                    duplicate.HashHex ?? hashHex,
+                    finalPath,
+                    DateTimeOffset.UtcNow),
+                ct).ConfigureAwait(false);
 
-                counts.Completed += 1;
-                counts.BytesTransferred += asset.SizeBytes;
-                await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
-                EmitProgress(job.JobId, counts, asset.Name);
-            }
-            catch (OperationCanceledException)
-            {
-                SafeDeleteTemp(tempPath);
-                await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.FailedTemporary, "CANCELLED", "Cancelled by user.", CancellationToken.None)
-                    .ConfigureAwait(false);
-                throw;
-            }
-            catch (IOException ioEx)
-            {
-                SafeDeleteTemp(tempPath);
-                counts.Failed += 1;
-                await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.FailedTemporary, "IO_ERROR", ioEx.Message, ct)
-                    .ConfigureAwait(false);
-                await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
-                EmitProgress(job.JobId, counts, asset.Name);
-            }
-            catch (Exception ex)
-            {
-                SafeDeleteTemp(tempPath);
-                counts.Failed += 1;
-                await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.Failed, "UNEXPECTED", ex.Message, ct)
-                    .ConfigureAwait(false);
-                await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
-                EmitProgress(job.JobId, counts, asset.Name);
-            }
+            await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.Completed, null, null, ct)
+                .ConfigureAwait(false);
+
+            counts.Completed += 1;
+            counts.BytesTransferred += asset.SizeBytes;
+            await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+            EmitProgress(job.JobId, counts, asset.Name);
+        }
+        catch (OperationCanceledException)
+        {
+            SafeDeleteTemp(tempPath);
+            await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.FailedTemporary, "CANCELLED", "Cancelled by user.", CancellationToken.None)
+                .ConfigureAwait(false);
+            throw;
+        }
+        catch (IOException ioEx)
+        {
+            SafeDeleteTemp(tempPath);
+            counts.Failed += 1;
+            await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.FailedTemporary, "IO_ERROR", ioEx.Message, ct)
+                .ConfigureAwait(false);
+            await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+            EmitProgress(job.JobId, counts, asset.Name);
+        }
+        catch (Exception ex)
+        {
+            SafeDeleteTemp(tempPath);
+            counts.Failed += 1;
+            await repository.SetJobItemStateAsync(job.JobId, asset.SourceObjectId, ImportItemState.Failed, "UNEXPECTED", ex.Message, ct)
+                .ConfigureAwait(false);
+            await repository.SetCheckpointAsync(job.JobId, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+            EmitProgress(job.JobId, counts, asset.Name);
         }
     }
 
@@ -391,6 +376,26 @@ public sealed class ImportService(
                 counts.Failed,
                 counts.BytesTransferred,
                 currentFile));
+    }
+
+    private async Task FinalizeJobAsync(
+        ImportJobId jobId,
+        ProgressAccumulator counts,
+        DateTimeOffset startedAt,
+        ImportJobStatus status,
+        string? errorMessage)
+    {
+        _results[jobId] = new ImportResult(
+            counts.Completed,
+            counts.Skipped,
+            counts.Failed,
+            DateTimeOffset.UtcNow - startedAt,
+            counts.BytesTransferred);
+
+        await repository.SetJobStatusAsync(jobId, status, errorMessage, DateTimeOffset.UtcNow, CancellationToken.None)
+            .ConfigureAwait(false);
+
+        EmitProgress(jobId, counts, currentFile: null);
     }
 
     private static async Task<string> CopyWithHashAsync(Stream source, Stream destination, CancellationToken ct)
