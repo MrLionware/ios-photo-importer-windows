@@ -18,7 +18,7 @@
         </Grid.RowDefinitions>
 
         <TextBlock Text="Import Progress" FontSize="24" FontWeight="SemiBold" />
-        <TextBlock Grid.Row="1" x:Name="CurrentFileText" Text="Waiting for first file..." />
+        <TextBlock Grid.Row="1" x:Name="CurrentFileText" Text="Preparing import list..." />
 
         <ProgressBar Grid.Row="2" x:Name="ProgressBar" Height="20" Minimum="0" Maximum="1" Value="0" />
 

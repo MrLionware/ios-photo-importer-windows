@@ -50,6 +50,7 @@ public sealed partial class ProgressPage : Page
         _workflowState.LastResult = result;
         StatusInfoBar.Message = "Import finished.";
         StatusInfoBar.Severity = InfoBarSeverity.Success;
+        ProgressBar.IsIndeterminate = false;
     }
 
     private void OnProgressChanged(object? sender, ImportProgress progress)
@@ -57,7 +58,29 @@ public sealed partial class ProgressPage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             _workflowState.LastProgress = progress;
-            CurrentFileText.Text = $"Current file: {progress.CurrentFile}";
+            var currentFile = progress.CurrentFile ?? string.Empty;
+            var isScanningPhase = currentFile.StartsWith("Scanning:", StringComparison.OrdinalIgnoreCase);
+
+            if (isScanningPhase)
+            {
+                var scannedName = currentFile["Scanning:".Length..].Trim();
+                CurrentFileText.Text = string.IsNullOrWhiteSpace(scannedName)
+                    ? "Preparing import list..."
+                    : $"Preparing import list: {scannedName}";
+                StatusInfoBar.Message = "Scanning iPhone library...";
+                StatusInfoBar.Severity = InfoBarSeverity.Informational;
+                ProgressBar.IsIndeterminate = true;
+            }
+            else
+            {
+                CurrentFileText.Text = string.IsNullOrWhiteSpace(currentFile)
+                    ? "Copying files..."
+                    : $"Copying: {currentFile}";
+                StatusInfoBar.Message = "Copying files...";
+                StatusInfoBar.Severity = InfoBarSeverity.Informational;
+                ProgressBar.IsIndeterminate = false;
+            }
+
             CountersText.Text = $"Completed: {progress.Completed}, Skipped: {progress.Skipped}, Failed: {progress.Failed}";
             BytesText.Text = $"Bytes transferred: {progress.BytesTransferred:N0}";
 
