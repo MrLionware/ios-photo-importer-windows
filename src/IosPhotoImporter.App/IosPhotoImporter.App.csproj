@@ -9,11 +9,12 @@
     <Platform>x64</Platform>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <AppxBundlePlatforms>x64</AppxBundlePlatforms>
+    <WindowsPackageType>None</WindowsPackageType>
+    <AppxBundlePlatforms Condition="'$(WindowsPackageType)' == 'MSIX'">x64</AppxBundlePlatforms>
     <UseWinUI>true</UseWinUI>
     <EnableMsixTooling>true</EnableMsixTooling>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <AppxPackageManifest>Package.appxmanifest</AppxPackageManifest>
+    <AppxPackageManifest Condition="'$(WindowsPackageType)' == 'MSIX'">Package.appxmanifest</AppxPackageManifest>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
